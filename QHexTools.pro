@@ -3,7 +3,8 @@ TEMPLATE = app
 QT += qml quick widgets
 
 SOURCES += main.cpp \
-    hexview.cpp
+    hexview.cpp \
+    hexmodel.cpp
 
 RESOURCES += qml.qrc
 
@@ -14,5 +15,6 @@ QML_IMPORT_PATH =
 include(deployment.pri)
 
 HEADERS += \
-    hexview.h
+    hexview.h \
+    hexmodel.h
 

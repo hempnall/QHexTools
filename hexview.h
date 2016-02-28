@@ -5,6 +5,7 @@
 #include <QRect>
 #include <QPainter>
 #include <QString>
+#include <hexmodel.h>
 
 class HexView : public QQuickPaintedItem
 {
@@ -12,6 +13,7 @@ class HexView : public QQuickPaintedItem
 
 public:
 
+    Q_PROPERTY(HexModel* model READ model WRITE setModel NOTIFY modelChanged)
     Q_PROPERTY(int offsetLen READ offsetLen WRITE setOffsetLen )
     Q_PROPERTY(int spacer READ spacer WRITE setSpacer )
     Q_PROPERTY(int hexSpacer READ hexSpacer WRITE setHexSpacer)
@@ -80,19 +82,26 @@ public:
     void setShowOffsets(bool showOffsets);
 
     QRect viewport() const;
-    void setViewport(const QRect &viewport);
+    void setViewport( QRect viewport);
+
+    HexModel *model() const;
+    void setModel(HexModel *model);
 
 signals:
 
     void contentHeightChanged();
     void contentWidthChanged();
+    void modelChanged();
 
 
 
 public slots:
-
+    void sizeChanged();
 
 private:
+
+    HexModel* model_;
+
     int offsetLen_;
     int spacer_;
     int hexSpacer_;
@@ -109,11 +118,13 @@ private:
     bool showAscii_;
     bool showHex_;
     bool showOffsets_;
-    QRect viewport_;
+     QRect viewport_;
+
+    bool showGuidelines_;
 
     void setContentWidth(int contentWidth);
     void setContentHeight(int contentHeight);
-    
+
     void recalcWidth();
     void recalcHeight();
     void rowsChanged();
@@ -124,6 +135,9 @@ private:
 
     QString getHexNumber(int number,int padding=0,bool formatted=false);
 
+    void paintOffsets(QPainter* painter,int& left,int first,int last);
+    void paintHex(QPainter* painter,int& left,int first, int last);
+    void paintAscii(QPainter* painter,int& left,int first, int last);
 
 
 };

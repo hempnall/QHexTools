@@ -2,6 +2,7 @@
     <qresource prefix="/">
         <file>main.qml</file>
         <file>photo.jpg</file>
+        <file>Hexy.qml</file>
         <file>HexView.qml</file>
     </qresource>
 </RCC>

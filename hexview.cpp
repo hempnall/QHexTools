@@ -1,12 +1,15 @@
 #include "hexview.h"
 #include <QDebug>
+
 #include <cctype>
 
 HexView::HexView()
+    : showGuidelines_(false),model_(0)
 {
+
     setBytesPerRow( 16 );
-    setRowHeight( 30 );
-    setContentLength(2048);
+    setRowHeight( 20 );
+  //  setContentLength(0);
     setShowAscii(true);
     setShowHex(true);
     setShowOffsets(true);
@@ -15,13 +18,14 @@ HexView::HexView()
     setHexSpacer(25);
     setAsciiSpacer(15);
     setOffsetLen(6);
+     setContentLength(273);
     recalcHeight();
     recalcWidth();
+    setRenderTarget(QQuickPaintedItem::FramebufferObject);
 }
 
 void HexView::paint(QPainter *painter)
 {
-
     int left = 0;
     int firstRow =  getRowForY( viewport_.y() )  - 1;
     int lastRow =  getRowForY( viewport_.y() + viewport_.height() )  + 1;
@@ -29,89 +33,25 @@ void HexView::paint(QPainter *painter)
     if (firstRow <  0) firstRow = 0;
     if (lastRow >  rowCount() ) lastRow = rowCount();
 
-    qDebug() << "viewport=" << viewport_ << " first=" << firstRow << " last=" << lastRow << " numrowsinvp=" << (lastRow-firstRow);
+    painter->setFont(QFont("Courier"));
+    qDebug() << "contentlength=" << contentLength()  << " firstrow=" << firstRow << " lastRow=" << lastRow << " viewport="  << viewport_;
 
-
-    QPen backpen(QColor(255,0,0));
-    painter->setPen(backpen);
-    painter->drawRect(viewport_);
+    if (showGuidelines_)    {
+        QPen backpen(QColor(255,0,0));
+        painter->setPen(backpen);
+        //painter->drawRect(viewport_);
+    }
 
     if (showOffsets()) {
-        QPen pen;
-
-        for (int i=firstRow; i<=lastRow ; ++i) {
-
-            QRect offsets(left,rowHeight() * i,offsetsWidth(),rowHeight());
-            pen.setColor(QColor(0,255,0,255));
-            painter->setPen(pen);
-            painter->drawRect(offsets);
-            QString offset = getHexNumber(i * bytesPerRow(),offsetLen(),true);
-            painter->drawText( offsets ,Qt::AlignCenter ,offset  );
-        }
-
-        left += offsetsWidth();
-
-        QRect space(left,0,spacer() ,contentHeight());
-        qDebug() << "spacer=" << spacer() << " spacer+left=" << spacer() + left << " qrect=" << space;
-        pen.setColor(QColor(0,0,255,255));
-        painter->setPen(pen);
-        painter->drawRect(space);
-
-        left += spacer();
+        paintOffsets(painter,left,firstRow,lastRow);
     }
 
     if (showHex()) {
-        QPen pen;
-        for (int i=firstRow ;i<=lastRow;++i) {
-            for (int j=0;j<bytesPerRow_;++j) {
-
-                int validx = (i * bytesPerRow()) + j;
-                int valueint = value(validx);
-
-                QRect hex(left + (j * hexSpacer()),i * rowHeight() , hexSpacer(),rowHeight());
-
-                pen.setColor(QColor(0,255,0,255));
-                 painter->setPen(pen);
-                painter->drawRect(hex);
-                QString valuestr = getHexNumber(valueint,2);
-                painter->drawText( hex ,Qt::AlignCenter,valuestr  );
-            }
-        }
-
-
-        left += (bytesPerRow() * hexSpacer());
-
-        QRect space(left,0,spacer() ,contentHeight());
-
-        pen.setColor(QColor(0,0,255,255));
-        painter->setPen(pen);
-        painter->drawRect(space);
-
-       left += spacer();
+        paintHex(painter,left,firstRow,lastRow);
     }
 
     if (showAscii()) {
-
-        for (int i=firstRow ;i<=lastRow;++i) {
-            for (int j=0;j<bytesPerRow_;++j) {
-
-                int validx = (i * bytesPerRow()) + j;
-                int valueint = value(validx);
-
-
-                QRect ascii(left + (j * asciiSpacer()),i * rowHeight(),asciiSpacer(),rowHeight());
-                QPen pen;
-                pen.setColor(QColor(255,0,0,255));
-                 painter->setPen(pen);
-                 if (std::isprint(valueint)) {
-                     QChar c(valueint);
-                  painter->drawText( ascii ,Qt::AlignCenter,QString(c)  );
-                 } else {
-                     painter->drawText( ascii ,Qt::AlignCenter,"."  );
-                 }
-            }
-        }
-
+        paintAscii(painter,left,firstRow,lastRow);
     }
 
 }
@@ -195,9 +135,8 @@ QRect HexView::getRectforByteAscii(int offset)
 
 int HexView::getRowForY(int y)
 {
-    qDebug() << y;
+
     float prop  = (float) y / (float) contentHeight();
-    qDebug() << y << " contentHeight=" << contentHeight() << " prop=" << prop << " rowCount=" << rowCount();
     return prop * rowCount();
 }
 
@@ -253,9 +192,7 @@ void HexView::setContentLength(int contentLength)
 {
     if (contentLength != contentLength_) {
         contentLength_ = contentLength;
-        qDebug() << "setCountentLength";
         rowsChanged();
-
     }
 }
 
@@ -268,7 +205,7 @@ void HexView::setRowCount(int rowCount)
 {
     if (rowCount != rowCount_) {
         rowCount_ = rowCount;
-
+        recalcHeight();
     }
 }
 
@@ -306,27 +243,154 @@ void HexView::setShowOffsets(bool showOffsets)
     recalcWidth();
 }
 
-QRect HexView::viewport() const
+ QRect HexView::viewport() const
 {
     return viewport_;
 }
 
-void HexView::setViewport(const QRect &viewport)
+void HexView::setViewport( QRect viewport)
 {
+    qDebug() << viewport;
     viewport_ = viewport;
+    update();
+}
+
+HexModel *HexView::model() const
+{
+    return model_;
+}
+
+void HexView::setModel(HexModel *model)
+{
+    model_ = model;
+    qDebug() << "size=" << model->size();
+    connect(model,SIGNAL(sizeChanged()),this,SLOT(sizeChanged()));
+    setContentLength(model->size());
+}
+
+void HexView::sizeChanged()
+{
+//    if (0 != model_)  {
+//        setContentLength(model_->size());
+//    }
+
 }
 
 int HexView::value(int offset)
 {
     return offset % 256;
+    // return model_->getValue(offset);
 }
 
 QString HexView::getHexNumber(int number, int padding, bool formatted)
 {
+
     QString result= QString::number(number, 16).toUpper();
     result= result.rightJustified( padding, '0' );
     if (formatted) result.prepend("0x");
     return result;
+}
+
+void HexView::paintOffsets(QPainter *painter, int &left,int first, int last)
+{
+    QPen pen;
+
+    for (int i=first; i<=last ; ++i) {
+        QRect offsets(left,rowHeight() * i,offsetsWidth(),rowHeight());
+
+        if (showGuidelines_) {
+            pen.setColor(Qt::green);
+            painter->setPen(pen);
+            painter->drawRect(offsets);
+        }
+
+        pen.setColor(Qt::black);
+        painter->setPen(pen);
+        QString offset = getHexNumber(i * bytesPerRow(),offsetLen(),true);
+        painter->drawText( offsets ,Qt::AlignCenter ,offset  );
+    }
+
+    left += offsetsWidth();
+
+    if (showGuidelines_) {
+        QRect space(left,0,spacer() ,contentHeight());
+        pen.setColor(Qt::blue);
+        painter->setPen(pen);
+        painter->drawRect(space);
+    }
+
+    left += spacer();
+}
+
+void HexView::paintHex(QPainter *painter, int &left,int first, int last)
+{
+    QPen pen;
+
+    for (int i=first ;i<=last;++i) {
+        for (int j=0;j<bytesPerRow_;++j) {
+
+            int validx = (i * bytesPerRow()) + j;
+
+
+            if (validx < contentLength_)    {
+                int valueint = value(validx);
+                QRectF hex(left + (j * hexSpacer()),i * rowHeight() , hexSpacer(),rowHeight());
+
+                if (showGuidelines_) {
+                    pen.setColor(Qt::green);
+                    painter->setPen(pen);
+                    painter->drawRect(hex);
+                }
+
+
+                QString valuestr = getHexNumber(valueint,2);
+
+                pen.setColor(Qt::black);
+                painter->setPen(pen);
+                painter->drawText( hex ,Qt::AlignCenter,valuestr  );
+            }
+        }
+
+    }
+
+
+    left += (bytesPerRow() * hexSpacer());
+
+    if (showGuidelines_) {
+        QRect space(left,0,spacer() ,contentHeight());
+        pen.setColor(Qt::blue);
+        painter->setPen(pen);
+        painter->drawRect(space);
+    }
+
+   left += spacer();
+}
+
+void HexView::paintAscii(QPainter *painter, int &left,int first, int last)
+{
+    for (int i=first ;i<=last;++i) {
+        for (int j=0;j<bytesPerRow_;++j) {
+
+            int validx = (i * bytesPerRow()) + j;
+
+            if (validx < contentLength_) {
+                int valueint = value(validx);
+
+
+                QRectF ascii(left + (j * asciiSpacer()),i * rowHeight(),asciiSpacer(),rowHeight());
+                QPen pen;
+                pen.setColor(Qt::black);
+                 painter->setPen(pen);
+                 if (std::isprint(valueint)) {
+                     QChar c(valueint);
+                     painter->drawText( ascii ,Qt::AlignCenter,QString(c)  );
+                 } else {
+                     painter->drawText( ascii ,Qt::AlignCenter,"."  );
+                 }
+            }
+        }
+    }
+
 }
 
 void HexView::setContentWidth(int contentWidth)
@@ -347,7 +411,7 @@ void HexView::setContentHeight(int contentHeight)
 
 void HexView::recalcWidth()
 {
-    int sizeOfOffsets = (2 * offsetLen() * asciiSpacer());
+    int sizeOfOffsets = (2 + offsetLen()) * asciiSpacer();
     int spacers = 0;
     if (showOffsets()) {
         spacers += spacer() + sizeOfOffsets;
